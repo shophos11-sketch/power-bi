@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 
 # ---------------------------------------------------------
-# 1. Configuración inicial de la aplicación
+# 1. Configuración inicial
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Plataforma de Análisis de Comercio Exterior", 
@@ -12,65 +12,55 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# 2. Función de Lógica Ansoff (Tabla D1)
+# 2. Lógica Ansoff (Tabla D1)
 # ---------------------------------------------------------
 def calcular_estrategia_ansoff(x_peru, m_destino, x_directo, vcrn, crcn):
-    """
-    Evalúa los criterios de la Tabla D1 y retorna la estrategia correspondiente.
-    """
     c_x = bool(x_peru > 0)
     c_m = bool(m_destino > 0)
     c_x_dir = bool(x_directo > 0)
     c_vcrn = bool(vcrn > 0)
     c_crcn = bool(crcn > 0)
 
-    # 1. Penetración de Mercado (Sí, Sí, Sí, Sí, Sí)
     if c_x and c_m and c_x_dir and c_vcrn and c_crcn:
         return "🎯 Penetración de Mercado"
-    
-    # 2. Desarrollo de Producto (No, Sí, No, No, Sí)
     elif (not c_x) and c_m and (not c_x_dir) and (not c_vcrn) and c_crcn:
         return "🔬 Desarrollo de Producto"
-    
-    # 3. Desarrollo de Mercado - caso 1 (Sí, Sí, No, Sí, Sí)
     elif c_x and c_m and (not c_x_dir) and c_vcrn and c_crcn:
         return "🚀 Desarrollo de Mercado - Caso 1"
-    
-    # 4. Desarrollo de Mercado - caso 2 (Sí, No, No, Sí, No)
     elif c_x and (not c_m) and (not c_x_dir) and c_vcrn and (not c_crcn):
         return "🌐 Desarrollo de Mercado - Caso 2"
-    
-    # 5. Sin Estrategia (Cualquier otra combinación)
     else:
         return "⚪ Sin Estrategia"
 
 # ---------------------------------------------------------
-# 3. Carga y preparación de datos desde Excel
+# 3. Carga de datos desde TablaPrincipal.xlsx
 # ---------------------------------------------------------
 @st.cache_data(ttl=300)
 def cargar_datos():
-    # Leemos TablaPrincipal.xlsx saltando la fila 1 explicativa (header=1)
-    df = pd.read_excel("TablaPrincipal.xlsx", header=1)
-    
-    # Omitimos la fila 3 (que son los totales) tomando desde la fila 1 de datos
-    df = df.iloc[1:].copy()
-    
-    # Limpieza básica de strings en Partida y Sector
+    # Carga del Excel especificando la fila de encabezados
+    try:
+        df = pd.read_excel("TablaPrincipal.xlsx", header=0)
+    except Exception:
+        df = pd.read_csv("partidas_sector.csv")
+
+    # Renombrar 'HS 6' a 'Partida' si existe para estandarizar
+    col_hs = [c for c in df.columns if 'hs' in str(c).lower() or 'partida' in str(c).lower()]
+    if col_hs:
+        df = df.rename(columns={col_hs[0]: 'Partida'})
+        
     if 'Partida' in df.columns:
         df['Partida'] = df['Partida'].astype(str).str.replace("'", "").str.strip()
-    if 'Sector' in df.columns:
-        df['Sector'] = df['Sector'].astype(str).str.strip()
         
     return df
 
 try:
     df_data = cargar_datos()
 except Exception as e:
-    st.error(f"Error al cargar la base de datos 'partidas_sector.csv': {e}")
+    st.error(f"Error al cargar la base de datos: {e}")
     st.stop()
 
 # ---------------------------------------------------------
-# 4. Barra Lateral (Navegación Modular)
+# 4. Navegación
 # ---------------------------------------------------------
 st.sidebar.title("🔍 Navegación")
 opcion_busqueda = st.sidebar.radio(
@@ -86,86 +76,86 @@ AÑOS = [str(a) for a in range(2015, 2025)]
 if opcion_busqueda == "📦 Búsqueda por Producto (Partida)":
     st.title("📦 Análisis por Producto / Partida Arancelaria")
     
-    partida_input = st.text_input("Ingrese la partida arancelaria (6 dígitos):", placeholder="Ej: 010121").strip()
+    partida_input = st.text_input("Ingrese la partida arancelaria (HS 6):", placeholder="Ej: 010121").strip()
 
     if partida_input:
-        resultado = df_data[df_data['Partida'] == partida_input]
+        resultado = df_data[df_data['Partida'].str.contains(partida_input, na=False)]
 
         if not resultado.empty:
             fila = resultado.iloc[0]
-            sector_asociado = fila.get('Sector', 'No especificado')
-            descripcion = fila.get('Descripción', fila.get('Descripción de partida', 'Sin descripción'))
-
-            # Cabecera del Producto
-            st.success(f"**Partida seleccionada:** {partida_input} - {descripcion}")
-            st.caption(f"📌 **Sector Exportador pertenenciente:** {sector_asociado}")
-
-            # --- SECCIÓN A: TENDENCIAS DEL PRODUCTO (SIN PAÍS SELECCIONADO) ---
-            st.markdown("### 📈 Tendencias Globales del Producto")
             
+            # Mapeo de columnas con soporte para fallbacks
+            sector_asociado = fila.get('Sector', 'No especificado')
+            descripcion = fila.get('Descripción de la partida arancelaria', fila.get('Descripción', 'Sin descripción'))
+
+            st.success(f"**Partida seleccionada:** {partida_input} - {descripcion}")
+            st.caption(f"📌 **Sector Exportador perteneciente:** {sector_asociado}")
+
+            st.markdown("### 📈 Tendencias Históricas")
             col_vcrn, col_crcn = st.columns(2)
 
-            # Buscar columnas del VCRn (Oferta Perú)
-            cols_vcrn = [c for c in df_data.columns if 'VCRn' in c and any(a in c for a in AÑOS)]
+            # Extraer tendencias buscando patrones de VCRn y CRCn
+            cols_vcrn = [c for c in df_data.columns if 'VCRn' in str(c)]
+            cols_crcn = [c for c in df_data.columns if 'CRCn' in str(c)]
+
             if cols_vcrn:
-                df_vcrn = pd.DataFrame({'Año': AÑOS, 'VCRn': [fila.get(c, 0) for c in cols_vcrn]})
-                fig_vcrn = px.line(df_vcrn, x='Año', y='VCRn', title="Tendencia Oferta Global (VCRn Perú)", markers=True)
+                # Tomar los valores de los años para VCRn
+                valores_vcrn = [fila.get(c, 0) for c in cols_vcrn[:10]]
+                df_vcrn = pd.DataFrame({'Año': AÑOS[:len(valores_vcrn)], 'VCRn': valores_vcrn})
+                fig_vcrn = px.line(df_vcrn, x='Año', y='VCRn', title="Oferta Perú (VCRn)", markers=True)
                 fig_vcrn.add_hline(y=0, line_dash="dash", line_color="gray")
                 col_vcrn.plotly_chart(fig_vcrn, use_container_width=True)
 
-            # Buscar columnas del CRCn (Demanda Global)
-            cols_crcn = [c for c in df_data.columns if 'CRCn' in c and any(a in c for a in AÑOS)]
             if cols_crcn:
-                df_crcn = pd.DataFrame({'Año': AÑOS, 'CRCn': [fila.get(c, 0) for c in cols_crcn]})
-                fig_crcn = px.line(df_crcn, x='Año', y='CRCn', title="Tendencia Demanda Global (CRCn Mercado)", markers=True)
+                # Tomar los valores de los años para CRCn
+                valores_crcn = [fila.get(c, 0) for c in cols_crcn[:10]]
+                df_crcn = pd.DataFrame({'Año': AÑOS[:len(valores_crcn)], 'CRCn': valores_crcn})
+                fig_crcn = px.line(df_crcn, x='Año', y='CRCn', title="Demanda Mercado (CRCn)", markers=True)
                 fig_crcn.add_hline(y=0, line_dash="dash", line_color="gray")
                 col_crcn.plotly_chart(fig_crcn, use_container_width=True)
 
-            # --- DIVISOR VISUAL ---
             st.divider()
 
-            # --- SECCIÓN B: ANÁLISIS MACRO DEL SECTOR Y ESTRATEGIAS ANSOFF ---
-            st.markdown(f"### 🏭 Análisis General del Sector: **{sector_asociado}**")
+            # --- ESTRATEGIA ANSOFF ---
+            st.markdown(f"### 🏭 Estrategia Ansoff: **{sector_asociado}**")
 
-            # Cálculo de variables para la Matriz Ansoff Histórica (Promedio 2015-2024)
-            x_peru_hist = fila.get('Promedio X Perú', fila.get('X Perú', 0))
-            m_dest_hist = fila.get('Promedio M Dinamarca', fila.get('M Dinamarca', 0))
-            x_dir_hist = fila.get('Promedio X Perú a Dinamarca', fila.get('X Perú a Dinamarca', 0))
-            vcrn_hist = fila.get('Promedio VCRn', fila.get('VCRn', 0))
-            crcn_hist = fila.get('Promedio CRCn', fila.get('CRCn', 0))
+            # Matriz Histórica
+            x_peru_hist = fila.get('Promedio X Perú', 0)
+            m_dest_hist = fila.get('Promedio M Dinamarca', 0)
+            x_dir_hist = fila.get('Promedio X Perú a Dinamarca', 0)
+            vcrn_hist = fila.get('Promedio VCRn', 0)
+            crcn_hist = fila.get('Promedio CRCn', 0)
 
             est_historica = calcular_estrategia_ansoff(x_peru_hist, m_dest_hist, x_dir_hist, vcrn_hist, crcn_hist)
 
-            # Cálculo de variables para la Matriz Ansoff Reciente (2024)
-            x_peru_2024 = fila.get('X Perú 2024', fila.get('X Perú', 0))
-            m_dest_2024 = fila.get('M Dinamarca 2024', fila.get('M Dinamarca', 0))
-            x_dir_2024 = fila.get('X Perú a Dinamarca 2024', 0)
-            vcrn_2024 = fila.get('VCRn 2024', fila.get('VCRn', 0))
-            crcn_2024 = fila.get('CRCn 2024', fila.get('CRCn', 0))
+            # Matriz 2024
+            x_peru_2024 = fila.get('2024', 0) if isinstance(fila.get('2024'), (int, float)) else 0
+            m_dest_2024 = fila.get('2024.1', 0) if isinstance(fila.get('2024.1'), (int, float)) else 0
+            x_dir_2024 = fila.get('2024.2', 0) if isinstance(fila.get('2024.2'), (int, float)) else 0
+            vcrn_2024 = fila.get('2024.3', 0) if isinstance(fila.get('2024.3'), (int, float)) else 0
+            crcn_2024 = fila.get('2024.4', 0) if isinstance(fila.get('2024.4'), (int, float)) else 0
 
             est_2024 = calcular_estrategia_ansoff(x_peru_2024, m_dest_2024, x_dir_2024, vcrn_2024, crcn_2024)
 
-            # Despliegue de métricas Ansoff lado a lado
             c_ansoff_hist, c_ansoff_2024 = st.columns(2)
-
             with c_ansoff_hist:
-                st.subheader("🏛️ Matriz ANSOFF Histórica (2015 - 2024)")
+                st.subheader("🏛️ ANSOFF Histórica (2015 - 2024)")
                 st.info(f"**Estrategia:** {est_historica}")
 
             with c_ansoff_2024:
-                st.subheader("⚡ Matriz ANSOFF Reciente (2024)")
+                st.subheader("⚡ ANSOFF Reciente (2024)")
                 st.success(f"**Estrategia:** {est_2024}")
 
         else:
-            st.warning(f"No se encontró la partida **{partida_input}** en el sistema.")
+            st.warning(f"No se encontró la partida **{partida_input}** en `TablaPrincipal.xlsx`.")
 
 # ---------------------------------------------------------
-# MÓDULOS EN DESARROLLO (SECTOR Y PAÍS)
+# MÓDULOS SECUNDARIOS
 # ---------------------------------------------------------
 elif opcion_busqueda == "🏭 Búsqueda por Sector":
     st.title("🏭 Búsqueda por Sector Exportador")
-    st.info("Módulo en preparación. Podrás filtrar y analizar todos los sectores comerciales.")
+    st.info("Módulo en preparación.")
 
 elif opcion_busqueda == "🌍 Búsqueda por País Destino":
     st.title("🌍 Búsqueda por País Destino")
-    st.info("Módulo en preparación. Podrás analizar la demanda y acuerdos según el mercado elegido.")
+    st.info("Módulo en preparación.")
