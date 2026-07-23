@@ -45,14 +45,17 @@ def calcular_estrategia_ansoff(x_peru, m_destino, x_directo, vcrn, crcn):
         return "⚪ Sin Estrategia"
 
 # ---------------------------------------------------------
-# 3. Carga y preparación de datos
+# 3. Carga y preparación de datos desde Excel
 # ---------------------------------------------------------
 @st.cache_data(ttl=300)
 def cargar_datos():
-    # Lee el archivo CSV 'partidas_sector.csv' de tu repositorio
-    df = pd.read_csv("partidas_sector.csv")
+    # Leemos TablaPrincipal.xlsx saltando la fila 1 explicativa (header=1)
+    df = pd.read_excel("TablaPrincipal.xlsx", header=1)
     
-    # Limpieza básica de strings
+    # Omitimos la fila 3 (que son los totales) tomando desde la fila 1 de datos
+    df = df.iloc[1:].copy()
+    
+    # Limpieza básica de strings en Partida y Sector
     if 'Partida' in df.columns:
         df['Partida'] = df['Partida'].astype(str).str.replace("'", "").str.strip()
     if 'Sector' in df.columns:
