@@ -2,92 +2,167 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-st.set_page_config(page_title="Análisis de Comercio Exterior", layout="wide")
+# ---------------------------------------------------------
+# 1. Configuración inicial de la aplicación
+# ---------------------------------------------------------
+st.set_page_config(
+    page_title="Plataforma de Análisis de Comercio Exterior", 
+    page_icon="📊", 
+    layout="wide"
+)
 
-# 1. Cargar la base de datos completa
-@st.cache_data
-def cargar_datos_completos():
-    # Saltamos la fila 1 (explicativa) y la fila 3 (totales)
-    # Ajusta el nombre del archivo según lo guardes en GitHub (ej: 'datos_comercio.xlsx' o '.csv')
-    df = pd.read_excel('TablaPrincipal.xlsx', header=1)
+# ---------------------------------------------------------
+# 2. Función de Lógica Ansoff (Tabla D1)
+# ---------------------------------------------------------
+def calcular_estrategia_ansoff(x_peru, m_destino, x_directo, vcrn, crcn):
+    """
+    Evalúa los criterios de la Tabla D1 y retorna la estrategia correspondiente.
+    """
+    c_x = bool(x_peru > 0)
+    c_m = bool(m_destino > 0)
+    c_x_dir = bool(x_directo > 0)
+    c_vcrn = bool(vcrn > 0)
+    c_crcn = bool(crcn > 0)
+
+    # 1. Penetración de Mercado (Sí, Sí, Sí, Sí, Sí)
+    if c_x and c_m and c_x_dir and c_vcrn and c_crcn:
+        return "🎯 Penetración de Mercado"
     
-    # Eliminamos la fila de sumatoria (generalmente es la primera fila de datos)
-    # y limpiamos espacios en los códigos de partida
-    df = df.iloc[1:].copy() 
-    df['Partida'] = df['Partida'].astype(str).str.strip().str.replace("'", "")
-    df['Sector'] = df['Sector'].astype(str).str.strip()
+    # 2. Desarrollo de Producto (No, Sí, No, No, Sí)
+    elif (not c_x) and c_m and (not c_x_dir) and (not c_vcrn) and c_crcn:
+        return "🔬 Desarrollo de Producto"
+    
+    # 3. Desarrollo de Mercado - caso 1 (Sí, Sí, No, Sí, Sí)
+    elif c_x and c_m and (not c_x_dir) and c_vcrn and c_crcn:
+        return "🚀 Desarrollo de Mercado - Caso 1"
+    
+    # 4. Desarrollo de Mercado - caso 2 (Sí, No, No, Sí, No)
+    elif c_x and (not c_m) and (not c_x_dir) and c_vcrn and (not c_crcn):
+        return "🌐 Desarrollo de Mercado - Caso 2"
+    
+    # 5. Sin Estrategia (Cualquier otra combinación)
+    else:
+        return "⚪ Sin Estrategia"
+
+# ---------------------------------------------------------
+# 3. Carga y preparación de datos
+# ---------------------------------------------------------
+@st.cache_data(ttl=300)
+def cargar_datos():
+    # Lee el archivo CSV 'partidas_sector.csv' de tu repositorio
+    df = pd.read_csv("partidas_sector.csv")
+    
+    # Limpieza básica de strings
+    if 'Partida' in df.columns:
+        df['Partida'] = df['Partida'].astype(str).str.replace("'", "").str.strip()
+    if 'Sector' in df.columns:
+        df['Sector'] = df['Sector'].astype(str).str.strip()
+        
     return df
 
 try:
-    df_data = cargar_datos_completos()
+    df_data = cargar_datos()
 except Exception as e:
-    st.error(f"Asegúrate de subir el archivo de datos al repositorio. Error: {e}")
+    st.error(f"Error al cargar la base de datos 'partidas_sector.csv': {e}")
     st.stop()
 
-# 2. Barra Lateral: Organización de Búsquedas
-st.sidebar.title("📌 Menú de Navegación")
-tipo_busqueda = st.sidebar.radio(
-    "Seleccione el tipo de análisis:",
-    ["🔎 Búsqueda por Producto (Partida)", "🏭 Búsqueda por Sector", "🌍 Búsqueda por País Destino"]
+# ---------------------------------------------------------
+# 4. Barra Lateral (Navegación Modular)
+# ---------------------------------------------------------
+st.sidebar.title("🔍 Navegación")
+opcion_busqueda = st.sidebar.radio(
+    "Selecciona el módulo de búsqueda:",
+    ["📦 Búsqueda por Producto (Partida)", "🏭 Búsqueda por Sector", "🌍 Búsqueda por País Destino"]
 )
 
-años = [str(a) for a in range(2015, 2025)]
+AÑOS = [str(a) for a in range(2015, 2025)]
 
-# ==========================================
-# OPCIÓN 1: BÚSQUEDA POR PRODUCTO (PARTIDA)
-# ==========================================
-if tipo_busqueda == "🔎 Búsqueda por Producto (Partida)":
+# ---------------------------------------------------------
+# MÓDULO 1: BÚSQUEDA POR PRODUCTO (PARTIDA)
+# ---------------------------------------------------------
+if opcion_busqueda == "📦 Búsqueda por Producto (Partida)":
     st.title("📦 Análisis por Producto / Partida Arancelaria")
     
     partida_input = st.text_input("Ingrese la partida arancelaria (6 dígitos):", placeholder="Ej: 010121").strip()
-    
+
     if partida_input:
-        producto_data = df_data[df_data['Partida'] == partida_input]
-        
-        if not producto_data.empty:
-            fila = producto_data.iloc[0]
-            sector_actual = fila['Sector']
-            descripcion = fila.get('Descripción de partida', 'Sin descripción')
+        resultado = df_data[df_data['Partida'] == partida_input]
+
+        if not resultado.empty:
+            fila = resultado.iloc[0]
+            sector_asociado = fila.get('Sector', 'No especificado')
+            descripcion = fila.get('Descripción', fila.get('Descripción de partida', 'Sin descripción'))
+
+            # Cabecera del Producto
+            st.success(f"**Partida seleccionada:** {partida_input} - {descripcion}")
+            st.caption(f"📌 **Sector Exportador pertenenciente:** {sector_asociado}")
+
+            # --- SECCIÓN A: TENDENCIAS DEL PRODUCTO (SIN PAÍS SELECCIONADO) ---
+            st.markdown("### 📈 Tendencias Globales del Producto")
             
-            st.subheader(f"Partida: {partida_input} - {descripcion}")
-            st.info(f"**Sector Perteneciente:** {sector_actual}")
-            
-            # --- BLOQUE 1: TENDENCIAS DEL PRODUCTO (2015-2024) ---
-            st.markdown("### 📈 Panorama Global del Producto (2015 - 2024)")
-            col1, col2 = st.columns(2)
-            
-            # Gráfico VCRn (Oferta Global de Perú)
-            vcrn_cols = [c for c in df_data.columns if 'VCRn' in c and any(str(a) in c for a in años)]
-            if vcrn_cols:
-                vcrn_vals = fila[vcrn_cols].values
-                df_vcrn = pd.DataFrame({'Año': años, 'VCRn': vcrn_vals})
+            col_vcrn, col_crcn = st.columns(2)
+
+            # Buscar columnas del VCRn (Oferta Perú)
+            cols_vcrn = [c for c in df_data.columns if 'VCRn' in c and any(a in c for a in AÑOS)]
+            if cols_vcrn:
+                df_vcrn = pd.DataFrame({'Año': AÑOS, 'VCRn': [fila.get(c, 0) for c in cols_vcrn]})
                 fig_vcrn = px.line(df_vcrn, x='Año', y='VCRn', title="Tendencia Oferta Global (VCRn Perú)", markers=True)
                 fig_vcrn.add_hline(y=0, line_dash="dash", line_color="gray")
-                col1.plotly_chart(fig_vcrn, use_container_width=True)
-            
-            # Gráfico CRCn (Demanda Global / Mercado)
-            crcn_cols = [c for c in df_data.columns if 'CRCn' in c and any(str(a) in c for a in años)]
-            if crcn_cols:
-                crcn_vals = fila[crcn_cols].values
-                df_crcn = pd.DataFrame({'Año': años, 'CRCn': crcn_vals})
+                col_vcrn.plotly_chart(fig_vcrn, use_container_width=True)
+
+            # Buscar columnas del CRCn (Demanda Global)
+            cols_crcn = [c for c in df_data.columns if 'CRCn' in c and any(a in c for a in AÑOS)]
+            if cols_crcn:
+                df_crcn = pd.DataFrame({'Año': AÑOS, 'CRCn': [fila.get(c, 0) for c in cols_crcn]})
                 fig_crcn = px.line(df_crcn, x='Año', y='CRCn', title="Tendencia Demanda Global (CRCn Mercado)", markers=True)
                 fig_crcn.add_hline(y=0, line_dash="dash", line_color="gray")
-                col2.plotly_chart(fig_crcn, use_container_width=True)
+                col_crcn.plotly_chart(fig_crcn, use_container_width=True)
 
+            # --- DIVISOR VISUAL ---
             st.divider()
 
-            # --- BLOQUE 2: ANÁLISIS MACRO DEL SECTOR ---
-            st.markdown(f"### 🏭 Análisis del Sector: {sector_actual}")
-            
-            # Filtrar todas las partidas de este sector
-            sector_df = df_data[df_data['Sector'] == sector_actual]
-            num_partidas = len(sector_df)
-            
-            st.metric(label="Total de Partidas en este Sector", value=num_partidas)
-            
-            # Aquí se desplegará la Matriz Ansoff Histórica del Sector
-            st.markdown("#### 🎯 Matriz Ansoff Histórica (2015-2024)")
-            st.success("Estrategia del Sector: **[Definir con regla lógica o columna]**")
+            # --- SECCIÓN B: ANÁLISIS MACRO DEL SECTOR Y ESTRATEGIAS ANSOFF ---
+            st.markdown(f"### 🏭 Análisis General del Sector: **{sector_asociado}**")
+
+            # Cálculo de variables para la Matriz Ansoff Histórica (Promedio 2015-2024)
+            x_peru_hist = fila.get('Promedio X Perú', fila.get('X Perú', 0))
+            m_dest_hist = fila.get('Promedio M Dinamarca', fila.get('M Dinamarca', 0))
+            x_dir_hist = fila.get('Promedio X Perú a Dinamarca', fila.get('X Perú a Dinamarca', 0))
+            vcrn_hist = fila.get('Promedio VCRn', fila.get('VCRn', 0))
+            crcn_hist = fila.get('Promedio CRCn', fila.get('CRCn', 0))
+
+            est_historica = calcular_estrategia_ansoff(x_peru_hist, m_dest_hist, x_dir_hist, vcrn_hist, crcn_hist)
+
+            # Cálculo de variables para la Matriz Ansoff Reciente (2024)
+            x_peru_2024 = fila.get('X Perú 2024', fila.get('X Perú', 0))
+            m_dest_2024 = fila.get('M Dinamarca 2024', fila.get('M Dinamarca', 0))
+            x_dir_2024 = fila.get('X Perú a Dinamarca 2024', 0)
+            vcrn_2024 = fila.get('VCRn 2024', fila.get('VCRn', 0))
+            crcn_2024 = fila.get('CRCn 2024', fila.get('CRCn', 0))
+
+            est_2024 = calcular_estrategia_ansoff(x_peru_2024, m_dest_2024, x_dir_2024, vcrn_2024, crcn_2024)
+
+            # Despliegue de métricas Ansoff lado a lado
+            c_ansoff_hist, c_ansoff_2024 = st.columns(2)
+
+            with c_ansoff_hist:
+                st.subheader("🏛️ Matriz ANSOFF Histórica (2015 - 2024)")
+                st.info(f"**Estrategia:** {est_historica}")
+
+            with c_ansoff_2024:
+                st.subheader("⚡ Matriz ANSOFF Reciente (2024)")
+                st.success(f"**Estrategia:** {est_2024}")
 
         else:
-            st.warning(f"No se encontró la partida **{partida_input}**.")
+            st.warning(f"No se encontró la partida **{partida_input}** en el sistema.")
+
+# ---------------------------------------------------------
+# MÓDULOS EN DESARROLLO (SECTOR Y PAÍS)
+# ---------------------------------------------------------
+elif opcion_busqueda == "🏭 Búsqueda por Sector":
+    st.title("🏭 Búsqueda por Sector Exportador")
+    st.info("Módulo en preparación. Podrás filtrar y analizar todos los sectores comerciales.")
+
+elif opcion_busqueda == "🌍 Búsqueda por País Destino":
+    st.title("🌍 Búsqueda por País Destino")
+    st.info("Módulo en preparación. Podrás analizar la demanda y acuerdos según el mercado elegido.")
