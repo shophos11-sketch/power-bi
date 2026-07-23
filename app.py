@@ -9,7 +9,7 @@ st.set_page_config(page_title="Análisis de Comercio Exterior", layout="wide")
 def cargar_datos_completos():
     # Saltamos la fila 1 (explicativa) y la fila 3 (totales)
     # Ajusta el nombre del archivo según lo guardes en GitHub (ej: 'datos_comercio.xlsx' o '.csv')
-    df = pd.read_excel('datos_comercio.xlsx', header=1)
+    df = pd.read_excel('TablaPrincipal.xlsx', header=1)
     
     # Eliminamos la fila de sumatoria (generalmente es la primera fila de datos)
     # y limpiamos espacios en los códigos de partida
